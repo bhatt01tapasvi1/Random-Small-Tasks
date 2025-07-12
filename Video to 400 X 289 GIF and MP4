@@ -1,0 +1,224 @@
+import cv2
+import numpy as np
+from moviepy.editor import VideoFileClip
+import os
+
+def resize_video_with_padding(input_path, output_width=400, output_height=299):
+    """
+    Resize video to specified dimensions while maintaining aspect ratio.
+    Adds padding (whitespace) if needed and outputs as both MP4 and GIF.
+    """
+
+    # Load the video
+    print("Loading video...")
+    cap = cv2.VideoCapture(input_path)
+
+    # Get original video properties
+    original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    print(f"Original dimensions: {original_width}x{original_height}")
+    print(f"Target dimensions: {output_width}x{output_height}")
+    print(f"FPS: {fps}, Total frames: {total_frames}")
+
+    # Calculate scaling factor to fit within target dimensions while maintaining aspect ratio
+    scale_x = output_width / original_width
+    scale_y = output_height / original_height
+    scale = min(scale_x, scale_y)  # Use smaller scale to ensure video fits
+
+    # Calculate new dimensions after scaling
+    new_width = int(original_width * scale)
+    new_height = int(original_height * scale)
+
+    print(f"Scaled dimensions: {new_width}x{new_height}")
+
+    # Calculate padding needed
+    pad_x = (output_width - new_width) // 2
+    pad_y = (output_height - new_height) // 2
+
+    print(f"Padding: x={pad_x}, y={pad_y}")
+
+    # Prepare output paths
+    # output_mp4 = "/content/output_video.mp4"
+    # output_gif = "/content/output_video.gif"
+    output_mp4 = "output_video.mp4"  # Temporary file for processing
+    output_gif = "output_video.gif"   # Temporary file for processing
+
+    # Set up video writer for MP4
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_mp4, fourcc, fps, (output_width, output_height))
+
+    frames_for_gif = []  # Store frames for GIF creation
+
+    print("Processing frames...")
+    frame_count = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Resize frame while maintaining aspect ratio
+        resized_frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+        # Create canvas with white background
+        canvas = np.ones((output_height, output_width, 3), dtype=np.uint8) * 255
+
+        # Place resized frame in the center of canvas
+        y_start = pad_y
+        y_end = pad_y + new_height
+        x_start = pad_x
+        x_end = pad_x + new_width
+
+        canvas[y_start:y_end, x_start:x_end] = resized_frame
+
+        # Write frame to MP4
+        out.write(canvas)
+
+        # Store frame for GIF (reduce frequency to keep GIF size manageable)
+        if frame_count % max(1, int(fps // 10)) == 0:  # Keep ~10 fps for GIF
+            # Convert BGR to RGB for GIF
+            rgb_frame = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
+            frames_for_gif.append(rgb_frame)
+
+        frame_count += 1
+        if frame_count % 30 == 0:  # Progress update every 30 frames
+            print(f"Processed {frame_count}/{total_frames} frames")
+
+    # Release video objects
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
+
+    print("Creating GIF...")
+    # Create GIF using moviepy for better quality and size control
+    try:
+        # Load the processed MP4 and convert to GIF
+        clip = VideoFileClip(output_mp4)
+        # Reduce frame rate for smaller GIF size
+        clip = clip.set_fps(10)
+        clip.write_gif(output_gif, fps=10, verbose=False, logger=None)
+        clip.close()
+        print(f"GIF created successfully: {output_gif}")
+    except Exception as e:
+        print(f"Error creating GIF: {e}")
+
+    print(f"MP4 created successfully: {output_mp4}")
+
+    # Optional: Move files to /content/ directory (uncomment the lines below)
+    # import shutil
+    # shutil.move(output_mp4, "/content/output_video.mp4")
+    # shutil.move(output_gif, "/content/output_video.gif")
+    # print("Files moved to /content/ directory")
+
+    return output_mp4, output_gif
+
+# Alternative method using only moviepy (simpler approach)
+def resize_video_moviepy(input_path, output_width=400, output_height=299):
+    """
+    Alternative method using only moviepy for simpler processing with better quality
+    """
+    print("Loading video with moviepy...")
+
+    # Load video
+    clip = VideoFileClip(input_path)
+
+    # Get original dimensions
+    original_width, original_height = clip.size
+    print(f"Original dimensions: {original_width}x{original_height}")
+
+    # Calculate scaling to fit within target dimensions
+    scale_x = output_width / original_width
+    scale_y = output_height / original_height
+    scale = min(scale_x, scale_y)
+
+    # Resize clip with better quality settings
+    resized_clip = clip.resize(scale)
+
+    # Get new dimensions after resize
+    new_width, new_height = resized_clip.size
+    print(f"Resized dimensions: {new_width}x{new_height}")
+
+    # Add padding to center the video
+    final_clip = resized_clip.on_color(
+        size=(output_width, output_height),
+        color=(255, 255, 255),  # White background
+        pos='center'
+    )
+
+    # Output paths (uncomment these to save directly to /content/)
+    output_mp4 = "/content/output_video_hq.mp4"
+    output_gif = "/content/output_video_hq.gif"
+    # output_mp4 = "output_video_hq.mp4"
+    # output_gif = "output_video_hq.gif"
+
+    # Write MP4 with higher quality settings
+    print("Writing MP4 with high quality settings...")
+    final_clip.write_videofile(
+        output_mp4,
+        verbose=False,
+        logger=None,
+        codec='libx264',           # Better codec
+        bitrate='2000k',           # Higher bitrate for better quality
+        preset='slow',             # Better compression efficiency
+        ffmpeg_params=['-crf', '18']  # High quality (lower CRF = better quality)
+    )
+
+    # Write GIF with better quality settings
+    print("Writing GIF with optimized settings...")
+    final_clip.write_gif(
+        output_gif,
+        fps=15,                    # Higher fps for smoother motion
+        verbose=False,
+        logger=None,
+        opt='OptimizePlus',        # Better optimization
+        fuzz=1                     # Slight compression for smaller file
+    )
+
+    # Close clip
+    clip.close()
+    final_clip.close()
+
+    print(f"High-quality MP4 created: {output_mp4}")
+    print(f"Optimized GIF created: {output_gif}")
+
+    return output_mp4, output_gif
+
+# Main execution
+if __name__ == "__main__":
+    # Input video path
+    input_video = "/content/video.mp4"
+
+    # Check if input file exists
+    if not os.path.exists(input_video):
+        print(f"Error: Input video not found at {input_video}")
+        print("Please make sure the video file exists at the specified path.")
+    else:
+        # Method 1: Using OpenCV + moviepy (more control)
+        print("=== Method 1: OpenCV + MoviePy ===")
+        try:
+            mp4_path, gif_path = resize_video_with_padding(input_video)
+            print("Method 1 completed successfully!")
+        except Exception as e:
+            print(f"Method 1 failed: {e}")
+
+        print("\n" + "="*50 + "\n")
+
+        # Method 2: Using only moviepy (simpler) - RECOMMENDED
+        print("=== Method 2: MoviePy Only (High Quality) ===")
+        try:
+            mp4_path2, gif_path2 = resize_video_moviepy(input_video)
+            print("Method 2 completed successfully!")
+        except Exception as e:
+            print(f"Method 2 failed: {e}")
+
+        print("\nProcessing complete!")
+        print("Final output files:")
+        print("- MP4: output_video_hq.mp4")
+        print("- GIF: output_video_hq.gif")
+        print("\nTo save files directly to /content/ directory, uncomment the relevant lines in the code.")
+
+# Required installations for Google Colab:
+# !pip install moviepy opencv-python
